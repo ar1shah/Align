@@ -22,7 +22,7 @@ Align solves a specific gap in real estate: most platforms focus on property lis
 
 | Role | What they do |
 |------|-------------|
-| **Client** | Takes a 9-section matching quiz; gets assigned to a realtor |
+| **Client** | Takes a 9 section matching quiz; gets assigned to a realtor |
 | **Realtor** | Receives pre-qualified leads; manages pipeline, deals, and appointments |
 | **Admin** | Oversees all clients and realtors; handles assignments; monitors KPIs |
 
