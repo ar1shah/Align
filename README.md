@@ -1,208 +1,211 @@
+<div align="center">
+
 # Align
 
-**A full-stack real estate agent-matching platform.** 
+**A real estate agent-matching platform that scores the quiz, routes each client to the right realtor, and drops the lead into that realtor's pipeline in real time.**
 
-[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=nextdotjs)](https://nextjs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://typescriptlang.org)
-[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?logo=vercel)](https://vercel.com)
+![Status](https://img.shields.io/badge/status-MVP%20(paused)-yellow)
+
+</div>
+
+<!-- TODO: record a short demo (quiz -> admin assigns -> lead appears on realtor Kanban) and save it as docs/demo.gif. Delete this image line if you skip it. -->
+![Demo](docs/demo.gif)
+
+
+**Tech:** TypeScript · Next.js 15 · React 19 · Supabase (Postgres, Auth, Realtime, RLS) · Tailwind · Resend · Vercel
 
 ---
 
 ## Overview
 
-Production: **Currently offline during updates**
+Most real estate platforms are built around listings, but for a lot of buyers and sellers the harder problem is finding the right agent. Referrals are random, and agents get leads with no context on what the client actually wants.
 
-Vercel (use for testing): [https://align-beta-aris-projects-f14c4a84.vercel.app/](https://align-beta-aris-projects-f14c4a84.vercel.app/)
+Align fixes the matching side. Clients take a 9 section quiz, an admin reviews the answers and assigns the client to a realtor, and the realtor receives a lead that is already filled in from the quiz. Clients use it for free, and Align's model is a referral fee on deals that close. I built the full stack: the quiz, the admin panel, and the realtor CRM.
 
-Align solves a specific gap in real estate: most platforms focus on property listings, but finding the *right agent* is often the harder problem. Align matches clients to agents based on their needs, preferences, and personality.
+## Features
 
-**Three user roles:**
+**One quiz replaces the intake call.** Clients answer 40 questions across 9 sections covering intent, budget, location, timeline, and what they want from an agent. Questions and whole sections show or hide based on earlier answers, and progress saves as they go, so they can leave and resume exactly where they stopped.
 
-| Role | What they do |
-|------|-------------|
-| **Client** | Takes a 9 section matching quiz; gets assigned to a realtor |
-| **Realtor** | Receives pre-qualified leads; manages pipeline, deals, and appointments |
-| **Admin** | Oversees all clients and realtors; handles assignments; monitors KPIs |
+**Admins assign with a full audit trail.** KPI dashboard, client and realtor management, quiz answer viewer with CSV export, and assign, reassign, and unassign actions that each write an audit entry.
 
-**Business model:** Clients use the platform for free. Realtors receive matched leads. Align earns a 10-35% referral fee on closed deals.
+**Realtors get leads that are already qualified.** An assigned client appears on the realtor's Kanban board without a refresh, pre-filled with purchase intent and budget from the quiz. From there they move it through New, Working, Nurture, and Client or Lost, set follow-up dates, decline with a reason, and convert it into a CRM client.
 
----
+**The realtor side is a small CRM.** Onboarding with a digital MSA signature, appointments, a deals pipeline with document attachments, referral contracts, and payouts.
 
-## Screenshots
-
-Landing Page
-
-![Landingpage](docs/screenshots/showcase_landing.png)
-
-Quiz Page
-
-![Quiz](docs/screenshots/showcase_quiz.png)
-
-Realtor Dashboard
-
-![Realtordash](docs/screenshots/showcase_realtordash.png)
-
-Admin Dashboard
-
-![Admindash](docs/screenshots/showcase_admindash.png)
-
----
-
-## System Design
-
-```mermaid
-flowchart TB
-  subgraph browser["Browser"]
-    ClientUI["Client - Quiz and Dashboard"]
-    AdminUI["Admin - Management Panel"]
-    RealtorUI["Realtor - CRM Dashboard"]
-  end
-
-  subgraph nextjs["Next.js 15 App Router"]
-    MW["middleware.ts - role guards"]
-    RSC["Server Components - reads"]
-    SA["Server Actions - admin and quiz mutations"]
-    API["API Route Handlers - realtor mutations"]
-    DBLayer["lib/db - data access layer"]
-  end
-
-  subgraph supabase["Supabase"]
-    Auth["Supabase Auth"]
-    PG["PostgreSQL + RLS"]
-    RT["Realtime"]
-    Storage["Storage - documents"]
-  end
-
-  Resend["Resend - email"]
-
-  ClientUI --> MW
-  AdminUI --> MW
-  RealtorUI --> MW
-  MW --> Auth
-  MW --> RSC
-  RSC --> DBLayer
-  SA --> DBLayer
-  API --> DBLayer
-  DBLayer --> PG
-  RealtorUI -->|lead updates| RT
-  RT --> PG
-  SA -->|assignment notifications| Resend
-  API --> Storage
-```
-
-### Data flow — client to realtor
-
-```mermaid
-sequenceDiagram
-  participant C as Client
-  participant A as Admin
-  participant R as Realtor
-  participant DB as Supabase
-
-  C->>DB: Complete quiz (quiz_sessions + quiz_responses)
-  A->>DB: assign_client_to_realtor() RPC
-  DB-->>R: Lead created via DB trigger (Realtime push)
-  A->>C: Email notification (match confirmed)
-  A->>R: Email notification (new lead)
-  R->>DB: Update lead stage / create deal
-```
-
----
-
-## Technical Architecture
-
-- **Next.js 15 App Router** with React Server Components as the default. Client components are used only for interactive elements: Kanban DnD, modals, controlled forms, and Supabase Realtime subscriptions.
-- **Two mutation patterns:** admin/quiz mutations use Next.js Server Actions (called directly from forms/components); realtor mutations use conventional REST route handlers under `app/api/`.
-- **`lib/db/*` data access layer**: all Supabase queries are centralized in typed modules, never scattered across components.
-- **Supabase RLS** enforces authorization at the database level. The middleware and layout redirects are a UX convenience on top, the DB will reject unauthorized queries regardless.
-- **Assignment-sync trigger**: when an admin assigns a client, a Postgres trigger automatically creates a `leads` record in the realtor's pipeline, which Supabase Realtime delivers to the realtor's Kanban without a page refresh.
-- **Immutable audit log**: every admin action is appended to `audit_logs` with actor, entity, and metadata. No update/delete policies on that table.
-- **Quiz content in DB**:  sections, questions, options, and conditional visibility rules are stored in `quiz_*` tables and seeded via `npm run seed:quiz`. Content changes don't require a code deploy.
-
----
+**Three roles, enforced in the database.** Clients, realtors, and admins each see only their own data. The UI redirects are a convenience, and Postgres is what actually rejects an unauthorized query.
 
 ## Tech Stack
 
 | Layer | Technology | Notes |
-|-------|-----------|-------|
-| Framework | [Next.js 15](https://nextjs.org) (App Router) | RSC-first, TypeScript |
-| UI | [React 19](https://react.dev), [Tailwind CSS 3](https://tailwindcss.com), [shadcn/ui](https://ui.shadcn.com) | Radix UI primitives |
-| Icons | [Lucide React](https://lucide.dev) | |
-| Animation | [Framer Motion](https://www.framer.com/motion/) | |
-| Forms | [React Hook Form](https://react-hook-form.com) + [Zod](https://zod.dev) | |
-| Drag & Drop | [@dnd-kit](https://dndkit.com) | Realtor Kanban board |
-| State | [Zustand](https://zustand-demo.pmnd.rs) | Lightweight client state |
-| Database | [Supabase](https://supabase.com) (PostgreSQL) | RLS on all tables |
-| Auth | Supabase Auth (`@supabase/ssr`) | Email + OTP, cookie sessions |
-| Email | [Resend](https://resend.com) | Assignment notifications |
-| Hosting | [Vercel](https://vercel.com) | Auto-deploy from `main` |
-| Language | TypeScript 5 | Strict mode |
+| ----- | ---------- | ----- |
+| App framework | [Next.js 15](https://nextjs.org/) (App Router) | Server Components by default; Server Actions and Route Handlers for mutations. |
+| UI | [React 19](https://react.dev/) + [Tailwind CSS 3](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/) | Radix primitives, Framer Motion for animation, Lucide icons. |
+| Language | [TypeScript](https://www.typescriptlang.org/) | Typed data access modules under `lib/db`. |
+| Database / auth | [Supabase](https://supabase.com/) (Postgres, Auth, Realtime, Storage) | RLS on every table, SECURITY DEFINER RPCs, cookie sessions via `@supabase/ssr`, email + OTP signup. |
+| Forms | [React Hook Form](https://react-hook-form.com/) + [Zod](https://zod.dev/) | Quiz and CRM forms. |
+| Drag-and-drop | [@dnd-kit](https://dndkit.com/) | Realtor leads Kanban board. |
+| Email | [Resend](https://resend.com/) | Match and new-lead notifications on assignment. |
+| Hosting | [Vercel](https://vercel.com/) + [Supabase Cloud](https://supabase.com/) | Auto-deploy from `main`. |
 
----
+## Screenshots
 
-## Core Features
+**Landing page:** public entry point for clients
+![Landing page](docs/screenshots/showcase_landing.png)
 
-### Client
-- Email/password signup with OTP email verification
-- 9-section matching quiz with 45+ questions
-- 11 question types: single/multi choice, text, number, money, address, yes/no, phone, email, date
-- Conditional section visibility (questions adapt based on prior answers)
-- Auto-save with 400ms debounce (quiz resumes exactly where left off)
-- Mobile-optimized with sticky footer navigation and progress bar
-- Dashboard shows matched realtor details after assignment
+**Matching quiz:** one section at a time, auto-saved
+![Quiz](docs/screenshots/showcase_quiz.png)
 
-### Realtor
-- Onboarding flow: profile completion + MSA digital signature
-- Leads Kanban with drag-and-drop stage management (New, Working, Nurture, Client / Lost)
-- Lead actions: set follow-up date, decline with reason, convert to CRM client
-- Appointments management (create, view)
-- Deals pipeline with property details and offer price
-- CRM clients table
-- Referral contracts and payouts
-- Realtime lead delivery via Supabase subscriptions
+**Realtor dashboard:** leads Kanban with realtime delivery
+![Realtor dashboard](docs/screenshots/showcase_realtordash.png)
 
-### Admin
-- KPI dashboard: client count, realtor count, utilization rate, work queues
-- Full client management: list, detail view, status updates, notes
-- Full realtor management: list, detail view, capacity, active toggle
-- Assignment system: assign, reassign, and unassign clients with audit trail
-- Quiz submission viewer with per-question answers and CSV export
-- Bulk operations and work queues (unassigned clients, recent submissions)
-- Immutable audit log of all admin actions
+**Admin dashboard:** KPIs, work queues, and assignments
+![Admin dashboard](docs/screenshots/showcase_admindash.png)
 
----
+## Architecture
 
-## Quick Start
+```mermaid
+flowchart LR
+  Browser["Browser: client / realtor / admin UI"] --> MW["middleware.ts role guards"]
+  MW --> App["Next.js App Router"]
+  App --> DB["lib/db data access layer"]
+  DB --> PG[("Supabase Postgres + RLS")]
+  App -->|auth| Auth["Supabase Auth"]
+  PG -->|Realtime: leads| Browser
+  App -->|assignment emails| Resend["Resend"]
+  App -->|deal documents| Storage["Supabase Storage"]
+```
+
+All queries go through one typed data access layer, and the database, not the app, is the authorization boundary. Realtime closes the loop by pushing new leads from Postgres straight to the realtor's browser.
+
+## Engineering Decisions
+
+**Putting authorization in the database, not the middleware.** Three roles share one app and one set of tables, so a bug in a route guard could expose another user's data. `middleware.ts` and the layout checks only redirect people to the right place. The real rules are RLS policies: admins pass `is_admin()`, realtors are limited to rows where `realtor_id = auth.uid()`, and clients to rows where `user_id = auth.uid()`. Admin mutations go through `SECURITY DEFINER` functions that call `require_admin()` first, so the service role key never reaches the browser or a request handler.
+
+**Making assignment one transaction that also creates the lead.** The first version of `assign_client_to_realtor` only wrote the assignment, so a realtor was assigned a client and saw an empty dashboard. The dashboard reads `leads` by `assigned_realtor_id`, which is the realtor's auth user id and not the `realtors.id` the assignment used. The `assignment-lead-sync.sql` migration fixed this by having the function do everything atomically: close any active assignment, insert the new one, update the client status, look up the realtor's user id, and create a `leads` row seeded from the client's latest completed quiz (purpose, budget, area). The audit entry is written in the same call, so an assignment can't exist without its lead or its log.
+
+**Keeping `clients` and `crm_clients` separate on purpose.** `clients` is the admin's record of the person who took the quiz and their assignment history. `crm_clients` is the realtor's own working record, created only when they convert a lead. If they were one table, an admin reassigning a client would collide with whatever the realtor had already written about them. Keeping them apart means admin workflows never touch the realtor's CRM data.
+
+**Storing the quiz as data instead of code.** Sections, questions, options, and visibility rules live in the `quiz_*` tables, loaded by an idempotent `npm run seed:quiz`, so changing a question is a data update and not a deploy. Conditional logic is a small rule format (`all` / `any` conditions with operators like `eq`, `neq`, and `in`) evaluated by `isVisible()` in `lib/quiz/visibility.ts`. Each answer is saved through the `upsert_quiz_response` RPC, with text inputs debounced by 400ms, which is why a client can close the tab and resume mid-quiz.
+
+## What's Next
+
+- Replace manual assignment with a matching score. Quiz answers are already stored as structured responses per question key, so scoring realtors against them is a function over existing data rather than a schema change.
+- Add assignment rules (round-robin and capacity-based). Realtor capacity and an active toggle already exist in the admin panel and aren't used for routing yet.
+- Add an automated test suite. Coverage today is a manual QA guide in `docs/TESTING.md`.
+- Wire up Stripe for payouts. Payout records exist, but money movement is not implemented.
+
+<details>
+<summary><b>Technical deep dive</b></summary>
+
+**Core mechanic:** A client's quiz answers are stored per question; an admin calls one Postgres function to assign them; that function creates a pre-filled lead, and Supabase Realtime delivers it to the realtor's Kanban board.
+
+### Assignment sequence
+
+```mermaid
+sequenceDiagram
+  actor C as Client
+  actor A as Admin
+  participant App as Next.js Server Action
+  participant DB as Supabase Postgres
+  participant R as Realtor Kanban
+  participant Mail as Resend
+
+  C->>DB: upsert_quiz_response (per answer)
+  A->>App: assign client to realtor
+  App->>DB: assign_client_to_realtor() RPC
+  DB->>DB: close old assignment, insert new, set status
+  DB->>DB: create lead from latest completed quiz
+  DB->>DB: write audit_logs entry
+  DB-->>R: Realtime INSERT on leads (filtered by realtor)
+  App-->>Mail: match email (client) + new lead email (realtor)
+  R->>DB: update lead stage / create deal
+```
+
+### Architecture notes
+
+- **Two mutation patterns, chosen by who triggers them.** Admin and quiz mutations are Server Actions, which lets them call `revalidatePath()` after writing. Realtor mutations are REST handlers under `app/api/realtor/`, because they fire from interactive client components (Kanban drag, modals) where a `fetch` is the natural call.
+- **A single data access layer.** Every Supabase query lives in `lib/db/*` (one module per domain: leads, deals, appointments, payouts, and so on), so components never build queries themselves.
+- **Server Components first.** Client components are limited to what needs the browser: the Kanban board, modals, controlled forms, and the Realtime subscription.
+- **Realtime is scoped per realtor.** The Kanban subscribes to `postgres_changes` on `leads` with an `assigned_realtor_id` filter and handles INSERT, UPDATE, and DELETE into local state.
+- **Roles sync from `profiles`.** Triggers in `sync-profiles-triggers.sql` create the matching `clients` or `realtors` row when a profile is created or its role changes, and `handle_new_user()` gives every new account the `client` role.
+- **Email never blocks a mutation.** Notifications from `lib/email.ts` fire after the assignment succeeds, so a Resend failure can't roll back or fail an assignment.
+
+### Route map
+
+| Area | Routes |
+| ---- | ------ |
+| Public | `/`, `/signup`, `/login`, `/verify-otp`, `/forgot-password`, `/reset-password` |
+| Client | `/quiz`, `/quiz/[sectionKey]`, `/quiz/complete`, `/dashboard` |
+| Admin | `/admin`, `/admin/clients`, `/admin/realtors`, `/admin/assignments`, `/admin/quizzes`, `/admin/audit`, `/admin/settings` |
+| Realtor | `/realtor`, `/realtor/onboarding`, `/realtor/leads`, `/realtor/appointments`, `/realtor/clients`, `/realtor/deals`, `/realtor/referrals`, `/realtor/payouts`, `/realtor/settings` |
+| Realtor API | `/api/realtor/leads/*`, `/api/realtor/appointments/create`, `/api/realtor/deals/create`, `/api/realtor/clients/create`, `/api/realtor/profile/*`, `/api/realtor/sign-msa` |
+
+### Project structure
+
+```text
+Align/
+├── app/
+│   ├── admin/             # Admin pages and server actions
+│   ├── realtor/           # Realtor CRM: leads, deals, appointments, onboarding
+│   ├── quiz/              # Quiz pages, components, server actions
+│   ├── api/               # Route handlers: realtor mutations, quiz structure, signout
+│   ├── login/ signup/ verify-otp/ forgot-password/ reset-password/
+│   └── dashboard/         # Client dashboard / role redirect
+├── components/ui/         # shadcn/ui primitives
+├── lib/
+│   ├── db/                # Data access layer, one module per domain
+│   ├── quiz/              # Types, conditional visibility logic
+│   ├── email/             # Email templates
+│   └── supabaseClient.ts / supabaseServer.ts
+├── migrations/            # Admin panel, profile sync triggers, assignment-lead sync
+├── seed/                  # Quiz definition JSON + quiz.sql
+├── scripts/               # seed-quiz.ts
+├── docs/                  # API.md, ARCHITECTURE.md, TESTING.md, screenshots
+├── SETUP.sql              # profiles table + signup trigger
+├── DATABASE.md            # Full schema reference
+└── middleware.ts          # Role-based route protection
+```
+
+Extended docs live in `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/TESTING.md`, and `DATABASE.md`.
+
+### Security
+
+| Mechanism | Where |
+| --------- | ----- |
+| Row Level Security on all tables | `SETUP.sql`, `migrations/admin-panel.sql`, `seed/quiz.sql` |
+| Role helpers for policies | `is_admin()`, `is_realtor()`, `is_client()` in `admin-panel.sql` |
+| Admin-only mutations | `SECURITY DEFINER` RPCs that call `require_admin()` first |
+| Route guard by role | `middleware.ts`, with a second check in `app/admin/layout.tsx` and `app/realtor/layout.tsx` |
+| HTTP-only cookie sessions | `@supabase/ssr`, no tokens in localStorage |
+| New accounts default to least privilege | `handle_new_user()` assigns `client`; admin and realtor roles are granted manually in SQL |
+| Service role key kept out of the app runtime | Used only by `scripts/seed-quiz.ts` |
+| Explicit session checks on sensitive handlers | `sign-msa` and `convert-to-client` |
+
+Several other realtor routes (`update-stage`, `decline`, `set-next-touch`) skip an in-handler session check and rely on RLS to reject unauthorized writes.
+
+</details>
+
+<details>
+<summary><b>Run it locally</b></summary>
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org) 20+
-- A [Supabase](https://supabase.com) project (free tier works)
-- A [Resend](https://resend.com) account (optional: only needed for email notifications)
+- Node.js 20+
+- A [Supabase](https://supabase.com/) project (free tier works)
+- (Optional) A [Resend](https://resend.com/) account, only needed for assignment emails
 
-### 1. Clone and install
+### Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/align-beta.git
-cd align-beta
+git clone https://github.com/ar1shah/Align.git
+cd Align
+cp .env.local.example .env.local   # fill in Supabase keys (names below)
 npm install
 ```
 
-### 2. Configure environment variables
+In the Supabase SQL Editor, run these files in order:
 
-```bash
-cp .env.local.example .env.local
-```
-
-Open `.env.local` and fill in your Supabase project URL and keys. More details in [Environment Configuration](#environment-configuration)
-
-### 3. Run database migrations
-
-Open the Supabase SQL Editor for your project and run these files **in order**:
-
-```
+```text
 1. SETUP.sql
 2. seed/quiz.sql
 3. migrations/admin-panel.sql
@@ -210,246 +213,45 @@ Open the Supabase SQL Editor for your project and run these files **in order**:
 5. migrations/assignment-lead-sync.sql
 ```
 
-See [DATABASE.md](./DATABASE.md) for the full migration reference.
-
-### 4. Seed quiz questions
+Then seed the quiz and start the app:
 
 ```bash
 npm run seed:quiz
-```
-
-This populates the quiz tables with all 45+ questions.
-
-### 5. Set your admin account
-
-In the Supabase SQL Editor, after creating your account via the signup page:
-
-```sql
-UPDATE profiles SET role = 'admin' WHERE email = 'your@email.com';
-```
-
-### 6. Start the dev server
-
-```bash
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000).
+Sign up through `/signup`, then promote your account (new accounts are clients by default):
 
----
-
-## Development URLs
-
-| URL | Role | Description |
-|-----|------|-------------|
-| `http://localhost:3000` | Public | Homepage / landing page |
-| `http://localhost:3000/signup` | Public | Create a new account |
-| `http://localhost:3000/login` | Public | Sign in |
-| `http://localhost:3000/quiz` | Client | Start the matching quiz |
-| `http://localhost:3000/dashboard` | Client | View match status |
-| `http://localhost:3000/admin` | Admin | KPI dashboard |
-| `http://localhost:3000/admin/clients` | Admin | Client management |
-| `http://localhost:3000/admin/realtors` | Admin | Realtor management |
-| `http://localhost:3000/admin/assignments` | Admin | Assignment management |
-| `http://localhost:3000/admin/quizzes` | Admin | Quiz submission viewer |
-| `http://localhost:3000/admin/audit` | Admin | Audit log |
-| `http://localhost:3000/realtor` | Realtor | Realtor overview |
-| `http://localhost:3000/realtor/leads` | Realtor | Leads Kanban |
-| `http://localhost:3000/realtor/appointments` | Realtor | Appointments |
-| `http://localhost:3000/realtor/deals` | Realtor | Deals pipeline |
-| `http://localhost:3000/realtor/settings` | Realtor | Profile settings |
-
----
-
-## Test Users
-
-Use these accounts to explore each role. Use at [https://align-beta-aris-projects-f14c4a84.vercel.app/](https://align-beta-aris-projects-f14c4a84.vercel.app/).
-
-| Role | Email | Password | Setup |
-|------|-------|----------|-------|
-| **Admin** | *ari@kolqua.com* | *ari123* | `UPDATE profiles SET role = 'admin' WHERE email = '...';` |
-| **Realtor** | *realtor@kolqua.com* | *realtor123* | `UPDATE profiles SET role = 'realtor' WHERE email = '...';`, then complete onboarding |
-| **Client** | *client@kolqua.com* | *client123* | Default role (make new account for test) |
-
-See [docs/TESTING.md](./docs/TESTING.md) for detailed test flows.
-
----
-
-## Development Commands
-
-```bash
-npm run dev          # Start local dev server
-npm run build        # Production build
-npm run start        # Run the production build locally
-npm run lint         # ESLint check
-npm run seed:quiz    # Seed quiz questions into the database
-```
-
----
-
-## Project Structure
-
-```
-align-beta/
-├── app/                        # Next.js App Router
-│   ├── _components/            # Shared UI (Button, Card, Input, Form)
-│   ├── admin/                  # Admin dashboard pages + _actions.ts
-│   ├── quiz/                   # Client quiz pages + _actions.ts
-│   ├── realtor/                # Realtor CRM pages
-│   ├── api/                    # REST route handlers
-│   │   ├── auth/signout/
-│   │   ├── quiz/structure/
-│   │   └── realtor/            # leads, profile, appointments, clients, deals
-│   ├── login/                  # Auth pages
-│   ├── signup/
-│   ├── verify-otp/
-│   ├── forgot-password/
-│   ├── reset-password/
-│   └── dashboard/              # Role-based redirect hub
-├── components/ui/              # shadcn/ui primitives
-├── lib/
-│   ├── db/                     # Database access layer (one module per domain)
-│   ├── quiz/                   # Quiz types + conditional visibility logic
-│   ├── email/                  # Resend email templates
-│   ├── auth.ts                 # Auth helpers + UserRole type
-│   ├── supabaseClient.ts       # Browser Supabase client
-│   ├── supabaseServer.ts       # Server Supabase client (cookie sessions)
-│   └── utils.ts                # General utilities
-├── migrations/                 # SQL migration files
-├── seed/                       # Quiz definition JSON + quiz.sql
-├── scripts/                    # seed-quiz.ts utility script
-├── public/                     # Static assets
-├── docs/                       # Extended documentation
-│   ├── API.md                  # API reference (REST routes + server actions)
-│   ├── TESTING.md              # Manual QA guide
-│   ├── ARCHITECTURE.md         # Deep-dive architecture and business model
-│   └── screenshots/            # App screenshots
-├── SETUP.sql                   # Core profiles table + auth triggers
-├── DATABASE.md                 # Full database schema reference
-├── middleware.ts               # Route protection by role
-├── .env.local.example          # Environment variable template
-└── package.json
-```
-
----
-
-## Security
-
-| Mechanism | Where |
-|-----------|-------|
-| **Row Level Security (RLS)** | All Supabase tables — enforces per-role data isolation at the DB level |
-| **Middleware role guards** | `middleware.ts` — redirects unauthenticated/wrong-role requests before rendering |
-| **Layout-level role checks** | `app/admin/layout.tsx`, `app/realtor/layout.tsx` — secondary guard layer |
-| **Cookie-based sessions** | `@supabase/ssr` — session stored in HTTP-only cookies, not localStorage |
-| **SECURITY DEFINER functions** | Admin RPCs and triggers run with elevated privileges without exposing service role key to the client |
-| **Immutable audit log** | `audit_logs` table has no update/delete RLS policies |
-| **Explicit session checks** | `sign-msa` and `convert-to-client` route handlers verify session independently |
-
-**Note:** Several realtor mutation routes (`update-stage`, `decline`, `set-next-touch`, etc.) rely on Supabase RLS for authorization rather than an in-handler session check. The database will reject any unauthorized query. This is intentional and consistent with Supabase's recommended pattern.
-
----
-
-## Deployment Options
-
-### Vercel
-
-1. Push the repo to GitHub.
-2. Import the project in the [Vercel dashboard](https://vercel.com/new).
-3. Add the environment variables from `.env.local.example`.
-4. Add your production domain to Supabase Auth.
-5. Deploy. Vercel auto-deploys on every push to `main`.
-
-### Self-hosted (Node.js)
-
-```bash
-npm run build
-npm run start         # Listens on port 3000 by default
-```
-
----
-
-## Environment Configuration
-
-Copy `.env.local.example` to `.env.local` and fill in your values:
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Your Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Seed only | Service role key — used by `npm run seed:quiz` only |
-| `RESEND_API_KEY` | Optional | Resend API key for assignment email notifications |
-| `NEXT_PUBLIC_APP_URL` | Optional | App base URL for email links (defaults to `http://localhost:3000`) |
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [docs/API.md](./docs/API.md) | Full API reference: all 12 REST route handlers, admin server actions, quiz server actions, and client-side auth flows |
-| [docs/TESTING.md](./docs/TESTING.md) | Manual QA guide: step-by-step test flows for all three roles, auth edge cases, regression matrix |
-| [DATABASE.md](./DATABASE.md) | Complete database schema: all tables, columns, RLS policies, ER diagram, migration order |
-| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Architecture deep-dive: business model, design decisions, data patterns, roadmap |
-
----
-
-## Troubleshooting
-
-**Quiz loads but has no questions**
-
-Run `npm run seed:quiz`. The quiz tables exist but haven't been populated yet.
-
-**Redirected to `/dashboard` instead of `/admin` or `/realtor`**
-
-Your account's role in the `profiles` table is `client`. Run the SQL to update it:
 ```sql
-UPDATE profiles SET role = 'admin' WHERE email = 'your@email.com';
--- or
-UPDATE profiles SET role = 'realtor' WHERE email = 'your@email.com';
+UPDATE profiles SET role = 'admin' WHERE email = 'you@example.com';
+-- or 'realtor' to try the realtor side (finish onboarding at /realtor/onboarding)
 ```
 
-**`Error: supabase URL is required`**
+See `DATABASE.md` for the full migration reference.
 
-`.env.local` is missing or the variable names don't match `.env.local.example`. Make sure `NEXT_PUBLIC_SUPABASE_URL` is set (the `NEXT_PUBLIC_` prefix is required for client-side access).
+### Required env var names
 
-**Realtor sees no leads after admin assignment**
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (used only by `npm run seed:quiz`)
+- `RESEND_API_KEY` (optional)
+- `NEXT_PUBLIC_APP_URL` (optional; defaults to `http://localhost:3000`)
 
-Check that `migrations/assignment-lead-sync.sql` was applied. The trigger in that file creates the `leads` record when an assignment is made.
+### Useful scripts
 
-**Assignment emails are not arriving**
+| Script | Command |
+| ------ | ------- |
+| `npm run dev` | Start the dev server |
+| `npm run build` / `npm run start` | Production build and serve |
+| `npm run lint` | ESLint |
+| `npm run seed:quiz` | Seed or update quiz sections, questions, and options |
 
-Verify `RESEND_API_KEY` is set in `.env.local`. Check that your Resend sender domain is verified. Email failures are non-blocking — assignments still succeed even if email sending fails; check console logs for error details.
-
-**Supabase auth redirect error in production**
-
-Add your production domain to Supabase Auth → URL Configuration → Redirect URLs (e.g. `https://yourdomain.com/**`).
-
-**`npm run build` fails with TypeScript errors**
-
-Run `npm run lint` first to identify issues. Common causes: missing environment variable types, or out-of-date `package-lock.json` (run `npm install`).
-
----
-
-## Project Status
-
-**Status: MVP — production paused**
-
-| Area | Status |
-|------|--------|
-| Auth system | Complete |
-| Client matching quiz | Complete |
-| Admin dashboard | Complete |
-| Realtor CRM | Complete |
-| Email notifications | Complete |
-| Automated test suite | Not yet implemented |
-| Matching algorithm | Planned |
-| SMS notifications | Planned |
-| Stripe / payout processing | Planned |
-
-See [docs/ARCHITECTURE.md#roadmap](./docs/ARCHITECTURE.md#roadmap) for the full phased roadmap.
+</details>
 
 ---
 
-## Credits
+Align was built as an MVP for a real estate agent-matching business. Production is paused, so there is no public live link, and the screenshots above are the best look at it. This repo is public for portfolio context.
 
-Built by [ar1shah](https://github.com/ar1shah). Licensed under the [MIT](./LICENSE)
+Ari Shah · [Portfolio](https://www.ar13.dev/) · [LinkedIn](https://linkedin.com/in/arishah)
+
+MIT License, see [LICENSE](LICENSE).
