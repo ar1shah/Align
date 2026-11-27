@@ -252,6 +252,6 @@ See `DATABASE.md` for the full migration reference.
 
 Align was built as an MVP for a real estate agent-matching business. Production is paused, so there is no public live link, and the screenshots above are the best look at it. This repo is public for portfolio context.
 
-Ari Shah · [Portfolio](https://www.ar13.dev/) · [LinkedIn](https://linkedin.com/in/arishah)
+Ari Shah · [Portfolio](https://www.ar13.dev/)
 
-MIT License, see [LICENSE](LICENSE).
+MIT License, see [LICENSE](LICENSE). 
